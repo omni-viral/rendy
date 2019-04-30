@@ -373,6 +373,8 @@ fn main() {
     let surface = factory.create_surface(window.into());
     let aspect = surface.aspect();
 
+    surface.center();
+
     let mut graph_builder = GraphBuilder::<Backend, Aux<Backend>>::new();
 
     let color = graph_builder.create_image(

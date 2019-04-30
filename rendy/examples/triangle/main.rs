@@ -254,6 +254,12 @@ fn main() {
 
     let surface = factory.create_surface(window.into());
 
+    // Call set_center_monitor(1) to center the monitor on monitor 1,
+    // this only works if you have mutliple monitors.
+
+    // This centers the monitor on the screen.
+    surface.center();
+
     let mut graph_builder = GraphBuilder::<Backend, ()>::new();
 
     let color = graph_builder.create_image(

@@ -223,6 +223,44 @@ where
     pub fn window(&self) -> &winit::Window {
         &self.window
     }
+
+    /// Centers the window on the current monitor the window lives in.
+    pub fn center(&self) {
+        self.set_centered(self.window.get_current_monitor())
+    }
+
+    /// Centers the window on the specified target monitor, falls back to primary monitor if out range.
+    pub fn set_center_monitor(&self, monitor_target: usize) {
+        if monitor_target < self.window.get_available_monitors().count() {
+            self.set_centered(
+                self.window
+                    .get_available_monitors()
+                    .nth(monitor_target)
+                    .unwrap(),
+            )
+        } else {
+            self.set_centered(self.window.get_primary_monitor());
+        }
+    }
+
+    /// Sets the window position to be in the center of the given monitor.
+    pub fn set_centered(&self, monitor: winit::MonitorId) {
+        let window_size = match self.window.get_outer_size() {
+            Some(logical_size) => logical_size,
+            None => return,
+        };
+
+        let monitor_size = monitor.get_dimensions();
+        let monitor_position = monitor.get_position();
+
+        let mut monitor_window_position: winit::dpi::LogicalPosition = (0.0, 0.0).into();
+        monitor_window_position.x =
+            monitor_position.x + (monitor_size.width * 0.5) - (&window_size.width * 0.5);
+        monitor_window_position.y =
+            monitor_position.y + (monitor_size.height * 0.5) - (&window_size.height * 0.5);
+
+        &self.window.set_position(monitor_window_position);
+    }
 }
 
 unsafe fn create_swapchain<B: Backend>(
