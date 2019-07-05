@@ -101,7 +101,7 @@ Similar `ComputePipeline` trait exists for compute pipelines.
 #### Example
 
 ```rust
-#[derive(DescritorSet)]
+#[derive(DescriptorSet)]
 struct Example {
     /// This field will be associated with binding 1 of type `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER`.
     /// Actual `Buffer` will be allocated and kept updated by `Set<Example>`.
