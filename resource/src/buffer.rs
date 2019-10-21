@@ -1,14 +1,13 @@
 //! Buffer usage, creation-info and wrappers.
 
-pub use gfx_hal::buffer::*;
+pub use rendy_core::hal::buffer::*;
 
 use {
     crate::{
         memory::{Block, Heaps, MappedRange, MemoryBlock, MemoryUsage},
-        util::{device_owned, Device, DeviceId},
-        CreationError,
+        core::{device_owned, Device, DeviceId},
     },
-    gfx_hal::{device::Device as _, Backend},
+    rendy_core::hal::{Backend, device::Device as _},
     relevant::Relevant,
 };
 
@@ -131,7 +130,7 @@ where
     pub fn visible(&self) -> bool {
         self.block
             .properties()
-            .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
+            .contains(rendy_core::hal::memory::Properties::CPU_VISIBLE)
     }
 
     /// Map range of the buffer to the CPU accessible memory.
@@ -139,7 +138,7 @@ where
         &'a mut self,
         device: &Device<B>,
         range: std::ops::Range<u64>,
-    ) -> Result<MappedRange<'a, B>, gfx_hal::device::MapError> {
+    ) -> Result<MappedRange<'a, B>, rendy_core::hal::mapping::Error> {
         self.block.map(device, range)
     }
 

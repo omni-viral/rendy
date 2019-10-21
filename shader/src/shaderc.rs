@@ -111,8 +111,8 @@ where
                     let mut ops = shaderc::CompileOptions::new().ok_or(ShaderCError::Init)?;
                     ops.set_target_env(shaderc::TargetEnv::Vulkan, vk_make_version!(1, 0, 0));
                     ops.set_source_language(self.lang);
-                    ops.set_generate_debug_info();
-                    ops.set_optimization_level(shaderc::OptimizationLevel::Performance);
+                    // ops.set_generate_debug_info();
+                    // ops.set_optimization_level(shaderc::OptimizationLevel::Performance);
                     ops
                 })
                 .as_ref(),
@@ -125,7 +125,7 @@ where
         self.entry.as_ref()
     }
 
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
+    fn stage(&self) -> rendy_core::hal::pso::ShaderStageFlags {
         stage_from_kind(&self.kind)
     }
 }
@@ -158,7 +158,7 @@ where
     E: AsRef<str>,
 {
     /// Precompile shader source code into Spir-V bytecode.
-    pub fn precompile(&self) -> Result<SpirvShader, <Self as Shader>::Error>
+    pub fn precompile(&self) -> Result<SpirvShader, failure::Error>
     where
         Self: Shader,
     {
@@ -207,7 +207,7 @@ where
         self.entry.as_ref()
     }
 
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
+    fn stage(&self) -> rendy_core::hal::pso::ShaderStageFlags {
         stage_from_kind(&self.kind)
     }
 }
@@ -225,8 +225,8 @@ pub type StaticShaderInfo = FileShaderInfo<&'static str, &'static str>;
 /// Shader info with a PathBuf for the path and static string for entry
 pub type PathBufShaderInfo = FileShaderInfo<std::path::PathBuf, &'static str>;
 
-fn stage_from_kind(kind: &ShaderKind) -> gfx_hal::pso::ShaderStageFlags {
-    use gfx_hal::pso::ShaderStageFlags;
+fn stage_from_kind(kind: &ShaderKind) -> rendy_core::hal::pso::ShaderStageFlags {
+    use rendy_core::hal::pso::ShaderStageFlags;
     match kind {
         ShaderKind::Vertex => ShaderStageFlags::VERTEX,
         ShaderKind::Fragment => ShaderStageFlags::FRAGMENT,

@@ -24,7 +24,7 @@ pub use self::shaderc::*;
 #[cfg(feature = "spirv-reflection")]
 pub use self::reflect::{ReflectError, ReflectTypeError, RetrievalKind, SpirvReflection};
 
-use gfx_hal::{pso::ShaderStageFlags, Backend};
+use rendy_core::hal::{pso::ShaderStageFlags, Backend, device::Device as _};
 use std::collections::HashMap;
 
 /// Error type returned by this module.
@@ -65,12 +65,7 @@ pub trait Shader {
     where
         B: Backend,
     {
-        gfx_hal::device::Device::create_shader_module(
-            factory.device().raw(),
-            &self
-                .spirv()
-                .map_err(|e| gfx_hal::device::ShaderError::CompilationFailed(format!("{:?}", e)))?,
-        )
+        factory.device().raw().create_shader_module(&self.spirv()?).map_err(Into::into)
     }
 }
 
@@ -86,20 +81,79 @@ pub struct SpirvShader {
 
 #[cfg(feature = "serde")]
 mod serde_spirv {
-    pub fn serialize<S>(data: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(spirv: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(rendy_util::cast_slice(&data))
+        let len = spirv.len();
+        let ptr = spirv.as_ptr();
+        unsafe {
+            let slice = std::slice::from_raw_parts::<u8>(ptr as _, len * 4);
+            serializer.serialize_bytes(slice)
+        }
+    }
+
+    struct SpirvVisitor;
+
+    fn from_bytes<E>(bytes: &[u8]) -> Result<Vec<u32>, E>
+    where
+        E: serde::de::Error,
+    {
+        let ptr = bytes.as_ptr();
+        let len = bytes.len();
+        if len % 4 > 0 {
+            Err(E::invalid_length(bytes.len(), &"Spirv data lengh expected to be multiple of 4"))
+        } else {
+            let mut spirv = Vec::<u32>::with_capacity(len / 4);
+            unsafe {
+                std::ptr::copy_nonoverlapping(ptr, spirv.as_mut_ptr() as _, len);
+                spirv.set_len(len / 4);
+            }
+            Ok(spirv)
+        }
+    }
+
+    impl<'de> serde::de::Visitor<'de> for SpirvVisitor {
+        type Value = Vec<u32>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("spirv binary data")
+        }
+
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Vec<u32>, E>
+        where
+            E: serde::de::Error,
+        {
+            from_bytes(v)
+        }
+
+        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Vec<u32>, E>
+        where
+            E: serde::de::Error,
+        {
+            from_bytes(&v)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Vec<u32>, E>
+        where
+            E: serde::de::Error,
+        {
+            from_bytes(v.as_bytes())
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Vec<u32>, E>
+        where
+            E: serde::de::Error,
+        {
+            from_bytes(v.as_bytes())
+        }
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        // Via the serde::Deserialize impl for &[u8].
-        let bytes: &[u8] = serde::Deserialize::deserialize(deserializer)?;
-        gfx_hal::pso::read_spirv(std::io::Cursor::new(bytes)).map_err(serde::de::Error::custom)
+        deserializer.deserialize_bytes(SpirvVisitor)
     }
 }
 
@@ -107,6 +161,27 @@ impl SpirvShader {
     /// Create Spir-V shader from bytes.
     pub fn new(spirv: Vec<u32>, stage: ShaderStageFlags, entrypoint: &str) -> Self {
         assert!(!spirv.is_empty());
+        Self {
+            spirv,
+            stage,
+            entry: entrypoint.to_string(),
+        }
+    }
+    
+    /// Create Spir-V shader from bytes.
+    pub fn from_bytes(bytes: Vec<u8>, stage: ShaderStageFlags, entrypoint: &str) -> Self {
+        assert!(!bytes.is_empty());
+        assert_ne!(!bytes.len() % 4, 0);
+
+        let ptr = bytes.as_ptr();
+        let len = bytes.len();
+
+        let mut spirv = Vec::<u32>::with_capacity(len / 4);
+        unsafe {
+            std::ptr::copy_nonoverlapping(ptr, spirv.as_mut_ptr() as _, len);
+            spirv.set_len(len / 4);
+        }
+
         Self {
             spirv,
             stage,
@@ -166,8 +241,8 @@ impl<B: Backend> ShaderSet<B> {
     }
 
     /// Returns the `GraphicsShaderSet` structure to provide all the runtime information needed to use the shaders in this set in gfx_hal.
-    pub fn raw<'a>(&'a self) -> Result<(gfx_hal::pso::GraphicsShaderSet<'a, B>), ShaderError> {
-        Ok(gfx_hal::pso::GraphicsShaderSet {
+    pub fn raw<'a>(&'a self) -> Result<(rendy_core::hal::pso::GraphicsShaderSet<'a, B>), failure::Error> {
+        Ok(rendy_core::hal::pso::GraphicsShaderSet {
             vertex: self
                 .shaders
                 .get(&ShaderStageFlags::VERTEX)
@@ -206,17 +281,17 @@ impl<B: Backend> ShaderSet<B> {
 #[allow(missing_copy_implementations)]
 pub struct SpecConstantSet {
     /// Vertex specialization
-    pub vertex: Option<gfx_hal::pso::Specialization<'static>>,
+    pub vertex: Option<rendy_core::hal::pso::Specialization<'static>>,
     /// Fragment specialization
-    pub fragment: Option<gfx_hal::pso::Specialization<'static>>,
+    pub fragment: Option<rendy_core::hal::pso::Specialization<'static>>,
     /// Geometry specialization
-    pub geometry: Option<gfx_hal::pso::Specialization<'static>>,
+    pub geometry: Option<rendy_core::hal::pso::Specialization<'static>>,
     /// Hull specialization
-    pub hull: Option<gfx_hal::pso::Specialization<'static>>,
+    pub hull: Option<rendy_core::hal::pso::Specialization<'static>>,
     /// Domain specialization
-    pub domain: Option<gfx_hal::pso::Specialization<'static>>,
+    pub domain: Option<rendy_core::hal::pso::Specialization<'static>>,
     /// Compute specialization
-    pub compute: Option<gfx_hal::pso::Specialization<'static>>,
+    pub compute: Option<rendy_core::hal::pso::Specialization<'static>>,
 }
 
 /// Builder class which is used to begin the reflection and shader set construction process for a shader set. Provides all the functionality needed to
@@ -251,28 +326,17 @@ impl ShaderSetBuilder {
             let msg = "A vertex or compute shader must be provided".to_string();
             return Err(gfx_hal::device::ShaderError::InterfaceMismatch(msg));
         }
-        type ShaderTy = (
-            Vec<u32>,
-            String,
-            Option<gfx_hal::pso::Specialization<'static>>,
-        );
 
-        let create_storage =
-            move |stage,
-                  shader: ShaderTy,
-                  factory|
-                  -> Result<ShaderStorage<B>, gfx_hal::device::ShaderError> {
-                let mut storage = ShaderStorage {
-                    stage: stage,
-                    spirv: shader.0,
-                    module: None,
-                    entrypoint: shader.1.clone(),
-                    specialization: shader.2,
-                };
-                unsafe {
-                    storage.compile(factory)?;
-                }
-                Ok(storage)
+        let create_storage = move |stage,
+                                   shader: (Vec<u32>, String, Option<rendy_core::hal::pso::Specialization<'static>>),
+                                   factory|
+              -> Result<ShaderStorage<B>, failure::Error> {
+            let mut storage = ShaderStorage {
+                stage: stage,
+                spirv: shader.0,
+                module: None,
+                entrypoint: shader.1.clone(),
+                specialization: shader.2,
             };
 
         if let Some(shader) = self.vertex.clone() {
@@ -433,20 +497,20 @@ pub struct ShaderStorage<B: Backend> {
     spirv: Vec<u32>,
     module: Option<B::ShaderModule>,
     entrypoint: String,
-    specialization: Option<gfx_hal::pso::Specialization<'static>>,
+    specialization: Option<rendy_core::hal::pso::Specialization<'static>>,
 }
 impl<B: Backend> ShaderStorage<B> {
     /// Builds the `EntryPoint` structure used by gfx_hal to determine how to utilize this shader
     pub fn get_entry_point<'a>(
         &'a self,
-    ) -> Result<Option<gfx_hal::pso::EntryPoint<'a, B>>, ShaderError> {
-        Ok(Some(gfx_hal::pso::EntryPoint {
+    ) -> Result<Option<rendy_core::hal::pso::EntryPoint<'a, B>>, failure::Error> {
+        Ok(Some(rendy_core::hal::pso::EntryPoint {
             entry: &self.entrypoint,
             module: self.module.as_ref().unwrap(),
             specialization: self
                 .specialization
                 .clone()
-                .unwrap_or(gfx_hal::pso::Specialization::default()),
+                .unwrap_or(rendy_core::hal::pso::Specialization::default()),
         }))
     }
 
@@ -454,29 +518,17 @@ impl<B: Backend> ShaderStorage<B> {
     pub unsafe fn compile(
         &mut self,
         factory: &rendy_factory::Factory<B>,
-    ) -> Result<(), gfx_hal::device::ShaderError> {
-        self.module = Some(gfx_hal::device::Device::create_shader_module(
-            factory.device().raw(),
-            &self.spirv,
-        )?);
-
+    ) -> Result<(), failure::Error> {
+        self.module = Some(factory.device().raw().create_shader_module(&self.spirv,)?);
         Ok(())
     }
 
     fn dispose(&mut self, factory: &rendy_factory::Factory<B>) {
-        use gfx_hal::device::Device;
+        use rendy_core::hal::device::Device;
 
         if let Some(module) = self.module.take() {
             unsafe { factory.destroy_shader_module(module) };
         }
         self.module = None;
-    }
-}
-
-impl<B: Backend> Drop for ShaderStorage<B> {
-    fn drop(&mut self) {
-        if self.module.is_some() {
-            panic!("This shader storage class needs to be manually dropped with dispose() first");
-        }
     }
 }

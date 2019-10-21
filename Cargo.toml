@@ -13,6 +13,22 @@ members = [
     "wsi",
     "chain",
     "graph",
-    "util",
+    "core",
     "texture",
+    "examples",
+    "init",
 ]
+
+[profile.release]
+lto = true
+
+[patch.crates-io]
+gfx-backend-dx12 = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+gfx-backend-empty = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+gfx-backend-gl = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+gfx-backend-metal = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+gfx-backend-vulkan = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+gfx-hal = { git = "https://github.com/omni-viral/gfx", rev = "7b01b35c7ae2da87da2784255e5c45e008c1ed83" }
+winit = { git = "https://github.com/omni-viral/winit", rev = "e9b72797e0d57d64cabd5a92d0ec310fda3817e8" }
+spirv_cross = { git = "https://github.com/omni-viral/spirv_cross", rev = "b27d886dad4dd9f00c0f7e8434ecfc7620b702be" }
+

@@ -19,9 +19,9 @@ serde-1 = ["serde"]
 smallvec = "0.6"
 derivative = "1.0"
 log = "0.4"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx", rev = "3d5db15661127c8cad8d85522a68ec36c82f6e69" }
-rendy-factory = { version = "0.4.0", path = "../factory" }
-rendy-util = { version = "0.4.0", path = "../util" }
-shaderc = { version = "0.6", optional = true }
+failure = "0.1"
+rendy-factory = { version = "0.3.0", path = "../factory" }
+rendy-core = { version = "0.3.0", path = "../core" }
+shaderc = { version = "0.5", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 spirv-reflect = { version = "0.2.1", optional = true }

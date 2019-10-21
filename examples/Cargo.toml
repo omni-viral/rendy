@@ -1,0 +1,47 @@
+[package]
+name = "rendy-examples"
+version = "0.1.0"
+authors = ["omni-viral <scareaangel@gmail.com>"]
+edition = "2018"
+repository = "https://github.com/amethyst/rendy"
+license = "MIT OR Apache-2.0"
+keywords = ["graphics", "gfx-hal", "rendy"]
+description = "Rendy examples"
+categories = ["rendering"]
+readme = "../README.md"
+exclude = ["www/generated"]
+
+[dependencies]
+cfg-if = "*"
+env_logger = "0.6"
+failure = "0.1"
+genmesh = "0.6"
+lazy_static = "1.0"
+log = "0.4"
+nalgebra = "0.18"
+palette = "0.4"
+rand = "0.6"
+rendy = { path = "../rendy", version = "0.3.1", features = ["texture-image", "mesh", "wsi-winit", "base", "gl"], default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_log = "0.1"
+console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["XmlHttpRequest"] }
+js-sys = "0.3"
+
+[[bin]]
+name = "triangle"
+path = "src/triangle/main.rs"
+
+[[bin]]
+name = "sprite"
+path = "src/sprite/main.rs"
+
+[[bin]]
+name = "meshes"
+path = "src/meshes/main.rs"
+
+[[bin]]
+name = "quads"
+path = "src/quads/main.rs"

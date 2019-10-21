@@ -1,5 +1,5 @@
-use gfx_hal::pso::ShaderStageFlags;
-use rendy_util::types::{vertex::VertexFormat, Layout, SetLayout};
+use rendy_core::hal::pso::ShaderStageFlags;
+use rendy_core::types::{vertex::VertexFormat, Layout, SetLayout};
 use spirv_reflect::ShaderModule;
 use std::collections::HashMap;
 use std::ops::{Bound, Range, RangeBounds};
@@ -93,7 +93,7 @@ impl From<ReflectTypeError> for ReflectError {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SpirvCachedGfxDescription {
-    pub vertices: (Vec<(u32, String, u8, gfx_hal::format::Format)>),
+    pub vertices: (Vec<(u32, String, u8, rendy_core::hal::format::Format)>),
     pub layout: Layout,
 }
 
@@ -101,11 +101,11 @@ pub(crate) struct SpirvCachedGfxDescription {
 #[derive(Clone, Debug)]
 pub struct SpirvReflection {
     /// Vec of output variables with names.
-    pub output_attributes: HashMap<(String, u8), gfx_hal::pso::AttributeDesc>,
+    pub output_attributes: HashMap<(String, u8), rendy_core::hal::pso::AttributeDesc>,
     /// Vec of output variables with names.
-    pub input_attributes: HashMap<(String, u8), gfx_hal::pso::AttributeDesc>,
+    pub input_attributes: HashMap<(String, u8), rendy_core::hal::pso::AttributeDesc>,
     /// Hashmap of output variables with names.
-    pub descriptor_sets: Vec<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>,
+    pub descriptor_sets: Vec<Vec<rendy_core::hal::pso::DescriptorSetLayoutBinding>>,
     /// Stage flag of this shader
     pub stage_flag: ShaderStageFlags,
     /// Push Constants
@@ -138,9 +138,9 @@ impl SpirvReflection {
         stage_flag: ShaderStageFlags,
         entrypoint: Option<String>,
         entrypoints: Vec<(ShaderStageFlags, String)>,
-        input_attributes: HashMap<(String, u8), gfx_hal::pso::AttributeDesc>,
-        output_attributes: HashMap<(String, u8), gfx_hal::pso::AttributeDesc>,
-        descriptor_sets: Vec<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>,
+        input_attributes: HashMap<(String, u8), rendy_core::hal::pso::AttributeDesc>,
+        output_attributes: HashMap<(String, u8), rendy_core::hal::pso::AttributeDesc>,
+        descriptor_sets: Vec<Vec<rendy_core::hal::pso::DescriptorSetLayoutBinding>>,
         push_constants: Vec<(ShaderStageFlags, Range<u32>)>,
     ) -> Result<Self, ReflectError> {
         Ok(SpirvReflection {
@@ -213,7 +213,7 @@ impl SpirvReflection {
                         ReflectError::Retrieval(RetrievalKind::DescriptorSets, e.to_string())
                     })?
                     .iter()
-                    .map(ReflectInto::<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>::reflect_into)
+                    .map(ReflectInto::<Vec<rendy_core::hal::pso::DescriptorSetLayoutBinding>>::reflect_into)
                     .collect();
 
                 // This is a fixup-step required because of our implementation. Because we dont pass the module around
@@ -346,8 +346,8 @@ impl SpirvReflection {
     }
 }
 
-pub(crate) fn merge(reflections: &[SpirvReflection]) -> Result<SpirvReflection, ReflectError> {
-    let mut descriptor_sets = Vec::<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>::new();
+pub(crate) fn merge(reflections: &[SpirvReflection]) -> Result<SpirvReflection, failure::Error> {
+    let mut descriptor_sets = Vec::<Vec<rendy_core::hal::pso::DescriptorSetLayoutBinding>>::new();
     let mut set_push_constants = Vec::new();
     let mut set_stage_flags = ShaderStageFlags::empty();
     let mut set_entry_points = Vec::new();
@@ -412,8 +412,8 @@ pub enum BindingEquality {
 
 /// Logically compares two descriptor layout bindings to determine their relational equality.
 pub fn compare_bindings(
-    lhv: &gfx_hal::pso::DescriptorSetLayoutBinding,
-    rhv: &gfx_hal::pso::DescriptorSetLayoutBinding,
+    lhv: &rendy_core::hal::pso::DescriptorSetLayoutBinding,
+    rhv: &rendy_core::hal::pso::DescriptorSetLayoutBinding,
 ) -> BindingEquality {
     if lhv.binding == rhv.binding
         && lhv.count == rhv.count
@@ -447,8 +447,8 @@ enum SetEquality {
 }
 
 fn compare_set(
-    lhv: &[gfx_hal::pso::DescriptorSetLayoutBinding],
-    rhv: &[gfx_hal::pso::DescriptorSetLayoutBinding],
+    lhv: &[rendy_core::hal::pso::DescriptorSetLayoutBinding],
+    rhv: &[rendy_core::hal::pso::DescriptorSetLayoutBinding],
 ) -> SetEquality {
     // Bindings may not be in order, so we need to make a copy and index them by binding.
     let mut lhv_bindings = HashMap::new();

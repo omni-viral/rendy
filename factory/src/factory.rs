@@ -9,17 +9,16 @@ use {
         memory::{self, Heaps, MemoryUsage, TotalMemoryUtilization, Write},
         resource::*,
         upload::{BufferState, ImageState, ImageStateOrLayout, Uploader},
-        util::{rendy_backend_match, rendy_with_slow_safety_checks, Device, DeviceId, Instance},
-        wsi::{Surface, SwapchainError, Target},
-    },
-    gfx_hal::{
-        adapter::{Adapter, Gpu, PhysicalDevice},
-        buffer,
-        device::{AllocationError, Device as _, MapError, OomOrDeviceLost, OutOfMemory, WaitFor},
-        format, image,
-        pso::DescriptorSetLayoutBinding,
-        window::{Extent2D, Surface as GfxSurface},
-        Backend, Features, Limits,
+        core::{
+            rendy_with_slow_safety_checks, with_winit, Device, DeviceId, Instance, InstanceId,
+            hal::{
+                self,
+                buffer, device::{Device as _, *}, error::HostExecutionError, format, image,
+                pso::DescriptorSetLayoutBinding, window::Extent2D, adapter::{Adapter, PhysicalDevice as _, Gpu}, Backend, Features,
+                Limits,
+            },
+        },
+        wsi::{Surface, Swapchain},
     },
     smallvec::SmallVec,
     std::{borrow::BorrowMut, cmp::max, mem::ManuallyDrop},
@@ -161,6 +160,11 @@ impl<B> Factory<B>
 where
     B: Backend,
 {
+    /// Get instance id of the factory.
+    pub fn instance_id(&self) -> InstanceId {
+        self.instance.id()
+    }
+
     /// Wait for whole device become idle.
     /// This function is very heavy and
     /// usually used only for teardown.
@@ -609,6 +613,16 @@ where
         &self.blitter
     }
 
+    /// Destroy surface returning underlying window back to the caller.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `surface` was not created by this `Factory`
+    pub fn destroy_surface(&mut self, surface: Surface<B>) {
+        surface.assert_instance_owner(&self.instance);
+        drop(surface);
+    }
+
     /// Create rendering surface from window.
     ///
     /// # Safety
@@ -616,7 +630,7 @@ where
     /// Closure must return surface object created from raw instance provided as closure argument.
     pub unsafe fn create_surface_with<T>(&mut self, f: impl FnOnce(&T) -> B::Surface) -> Surface<B>
     where
-        T: gfx_hal::Instance<Backend = B>,
+        T: hal::Instance<Backend = B>,
     {
         profile_scope!("create_surface");
         Surface::create(&self.instance, f)
@@ -631,9 +645,9 @@ where
         &self,
         surface: &Surface<B>,
     ) -> (
-        gfx_hal::window::SurfaceCapabilities,
-        Option<Vec<gfx_hal::format::Format>>,
-        Vec<gfx_hal::window::PresentMode>,
+        hal::window::SurfaceCapabilities,
+        Option<Vec<hal::format::Format>>,
+        Vec<hal::window::PresentMode>,
     ) {
         profile_scope!("get_surface_compatibility");
 
@@ -653,36 +667,26 @@ where
         unsafe { surface.format(&self.adapter.physical_device) }
     }
 
-    /// Destroy surface returning underlying window back to the caller.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `surface` was not created by this `Factory`
-    pub fn destroy_surface(&mut self, surface: Surface<B>) {
-        surface.assert_instance_owner(&self.instance);
-        drop(surface);
-    }
-
-    /// Create target out of rendering surface.
+    /// Create swapchain out of rendering surface.
     ///
     /// The compatibility of the surface with the queue family which will present to
-    /// this target must have *already* been checked using `Factory::surface_support`.
+    /// this swapchain must have *already* been checked using `Factory::surface_support`.
     ///
     /// # Panics
     ///
     /// Panics if `surface` was not created by this `Factory`.
-    pub fn create_target(
+    pub fn create_swapchain(
         &self,
         surface: Surface<B>,
         extent: Extent2D,
-        image_count: u32,
-        present_mode: gfx_hal::window::PresentMode,
+        image_count: Option<u32>,
+        present_mode: hal::window::PresentMode,
         usage: image::Usage,
-    ) -> Result<Target<B>, SwapchainError> {
-        profile_scope!("create_target");
+    ) -> Result<Swapchain<B>, failure::Error> {
+        profile_scope!("create_swapchain");
 
         unsafe {
-            surface.into_target(
+            surface.into_swapchain(
                 &self.adapter.physical_device,
                 &self.device,
                 extent,
@@ -693,21 +697,21 @@ where
         }
     }
 
-    /// Destroy target returning underlying surface back to the caller.
+    /// Destroy swapchain returning underlying surface back to the caller.
     ///
     /// # Safety
     ///
-    /// Target images must not be used by pending commands or referenced anywhere.
-    pub unsafe fn destroy_target(&self, target: Target<B>) -> Surface<B> {
-        target.dispose(&self.device)
+    /// Swapchain images must not be with_winit, used by pending commands or referenced anywhere.
+    pub unsafe fn destroy_swapchain(&self, swapchain: Swapchain<B>) -> Surface<B> {
+        swapchain.dispose(&self.device)
     }
 
     /// Check if queue family supports presentation to the specified surface.
     pub fn surface_support(&self, family: FamilyId, surface: &Surface<B>) -> bool {
         surface.assert_instance_owner(&self.instance);
-        surface
-            .raw()
-            .supports_queue_family(&self.adapter.queue_families[family.index])
+        unsafe {
+            surface.support(&self.adapter.queue_families[family.index])
+        }
     }
 
     /// Get raw device.
@@ -1037,6 +1041,19 @@ where
     }
 }
 
+with_winit! {
+    impl<B> Factory<B>
+    where
+        B: Backend,
+    {
+        /// Create rendering surface from window.
+        pub fn create_surface_from_winit(&mut self, window: &rendy_core::winit::window::Window) -> Surface<B> {
+            profile_scope!("create_surface");
+            Surface::from_winit(&self.instance, window)
+        }
+    }
+}
+
 impl<B> std::ops::Deref for Factory<B>
 where
     B: Backend,
@@ -1048,27 +1065,49 @@ where
     }
 }
 
+
 /// Initialize `Factory` and Queue `Families` associated with Device.
-#[allow(unused_variables)]
+#[allow(unused)]
 pub fn init<B>(
     config: Config<impl DevicesConfigure, impl HeapsConfigure, impl QueuesConfigure>,
 ) -> Result<(Factory<B>, Families<B>), gfx_hal::device::CreationError>
 where
     B: Backend,
 {
+    use crate::core::{identical_cast, rendy_backend};
+
     log::debug!("Creating factory");
-    rendy_backend_match!(B as backend => {
-        profile_scope!(concat!("init_factory"));
-        let instance = backend::Instance::create("Rendy", 1)
-            .map_err(|_| gfx_hal::device::CreationError::InitializationFailed)?;
-        Ok(crate::util::identical_cast(init_with_instance(instance, config)?))
-    });
+    rendy_backend!(type B {
+        Dx12 => {
+            profile_scope!(concat!("init_factory"));
+            let instance = rendy_core::dx12::Instance::create("Rendy", 1);
+            Ok(identical_cast(init_with_instance(instance, config)?))
+        }
+        Empty => {
+            profile_scope!(concat!("init_factory"));
+            let instance = rendy_core::empty::Instance::create("Rendy", 1);
+            Ok(identical_cast(init_with_instance(instance, config)?))
+        }
+        Gl => {
+            failure::bail!("This function does not support GL backend. Use `init_with_instance` instead.")
+        }
+        Metal => {
+            profile_scope!(concat!("init_factory"));
+            let instance = rendy_core::metal::Instance::create("Rendy", 1);
+            Ok(identical_cast(init_with_instance(instance, config)?))
+        }
+        Vulkan => {
+            profile_scope!(concat!("init_factory"));
+            let instance = rendy_core::vulkan::Instance::create("Rendy", 1);
+            Ok(identical_cast(init_with_instance(instance, config)?))
+        }
+    })
 }
 
 /// Initialize `Factory` and Queue `Families` associated with Device
 /// using existing `Instance`.
 pub fn init_with_instance<B>(
-    instance: impl gfx_hal::Instance<Backend = B>,
+    instance: impl hal::Instance<Backend = B>,
     config: Config<impl DevicesConfigure, impl HeapsConfigure, impl QueuesConfigure>,
 ) -> Result<(Factory<B>, Families<B>), gfx_hal::device::CreationError>
 where
@@ -1135,22 +1174,14 @@ where
 
         log::debug!("Queues: {:#?}", get_queues);
 
-        let Gpu {
-            device,
-            mut queue_groups,
-        } = unsafe {
+        let Gpu { device, queue_groups } = unsafe {
             adapter
                 .physical_device
                 .open(&create_queues, adapter.physical_device.features())
         }?;
 
         let families = unsafe {
-            families_from_device(
-                device_id,
-                &mut queue_groups,
-                get_queues,
-                &adapter.queue_families,
-            )
+            families_from_device(device_id, queue_groups, &adapter.queue_families)
         };
         (device, families)
     };
@@ -1191,17 +1222,4 @@ where
     };
 
     Ok((factory, families))
-}
-
-rendy_wsi::with_winit! {
-    impl<B> Factory<B>
-    where
-        B: Backend,
-    {
-        /// Create rendering surface from window.
-        pub fn create_surface(&mut self, window: &rendy_wsi::winit::window::Window) -> Surface<B> {
-            profile_scope!("create_surface");
-            Surface::new(&self.instance, window)
-        }
-    }
 }
